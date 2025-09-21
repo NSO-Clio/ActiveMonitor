@@ -108,30 +108,44 @@ const Search = () => {
         method: 'POST',
       });
 
-      // Проверяем, содержит ли ответ валидный JSON
+      // Проверяем тип содержимого ответа
       const contentType = response.headers.get('content-type');
 
       if (response.ok) {
         if (contentType && contentType.includes('application/json')) {
-          const data = await response.json();
-          console.log("Analytics result:", data);
-          setAnalyticsResult(data);
+          try {
+            const data = await response.json();
+            console.log("Analytics result:", data);
+            setAnalyticsResult(data);
+          } catch (jsonError) {
+            console.error("JSON parse error:", jsonError);
+            setError(`Ошибка анализа: Невозможно прочитать ответ сервера. Формат данных некорректен.`);
+          }
         } else {
-          // Если сервер вернул не JSON, обрабатываем как текстовую ошибку
-          const textResponse = await response.text();
-          setError(`Ошибка анализа: Сервер вернул некорректный формат данных. ${textResponse.substring(0, 100)}...`);
+          setError(`Ошибка анализа: Сервер вернул данные в неверном формате.`);
         }
       } else {
-        // Для ошибок сервера
+        // Для ошибок сервера - читаем тело ответа только один раз
+        let errorMessage = `Ошибка сервера: ${response.status} ${response.statusText}`;
+
         try {
-          // Сначала пробуем получить JSON с деталями ошибки
-          const errorData = await response.json();
-          setError(`Ошибка анализа: ${response.status} - ${errorData.detail || response.statusText}`);
-        } catch (jsonError) {
-          // Если JSON не получается распарсить, получаем ошибку как текст
-          const textError = await response.text();
-          setError(`Ошибка анализа: ${response.status} - ${textError.substring(0, 100) || response.statusText}`);
+          // Пытаемся прочитать тело ответа как JSON
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage += `. ${errorData.detail || ''}`;
+          } else {
+            // Если не JSON, читаем как текст
+            const textError = await response.text();
+            if (textError) {
+              errorMessage += `. ${textError.substring(0, 100)}`;
+            }
+          }
+        } catch (responseError) {
+          console.error("Error reading response:", responseError);
+          // Если произошла ошибка при чтении тела, используем только статус
         }
+
+        setError(errorMessage);
       }
     } catch (err) {
       console.error("Analytics error:", err);

@@ -15,9 +15,11 @@ from selenium.webdriver.chrome.options import Options
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import logging
 
 nest_asyncio.apply()
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # ---------------- config ----------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")

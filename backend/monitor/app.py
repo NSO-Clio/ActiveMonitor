@@ -301,20 +301,77 @@ async def check_site_now(site_id: int):
 
 @router.post("/analyze-logs/{site_id}")
 async def analyze_logs(site_id: int):
-    # Получаем логи
-    logs = get_console_logs_normalized_for_site(site_id=site_id, limit=50)
+    try:
+        # Определяем функцию get_console_logs_normalized_for_site если она отсутствует
+        def get_console_logs_normalized_for_site(site_id, limit=50):
+            """Получение нормализованных логов консоли для сайта."""
+            try:
+                # Получаем данные из таблицы проверок
+                df = get_checks_dataframe(limit=limit)
+                site_checks = df[df["site_id"] == site_id].sort_values("check_time", ascending=False)
 
-    payload = {
-        "old_logs": [{"timestamp": l["timestamp"], "response_time_ms": l.get("ping", 0)} for l in logs],
-        "logs_anomaly": [{"timestamp": l["timestamp"], "log_level": l.get("level", "info"), "message": l.get("message", "")} for l in logs],
-        "choice_role": True,
-    }
+                logs = []
+                for _, row in site_checks.iterrows():
+                    if row.get("check_time"):
+                        timestamp = row["check_time"].isoformat() if hasattr(row["check_time"], "isoformat") else str(row["check_time"])
 
-    # Отправка на anomaly_report_api
-    import httpx
-    async with httpx.AsyncClient() as client:
-        resp = await client.post("http://localhost:8000/anomaly/run-orchestrator", json=payload)
-        resp.raise_for_status()
-        result = resp.json()
+                        # Определяем уровень лога на основе статус-кода
+                        status_code = row.get("status_code")
+                        level = "error" if status_code and status_code >= 400 else "info"
 
-    return {"report": result["report"]}
+                        # Извлекаем консольные логи если они есть
+                        console_message = "No message"
+                        if row.get("console_logs"):
+                            try:
+                                # Если это JSON строка, парсим ее
+                                import json
+                                console_data = json.loads(row.get("console_logs"))
+                                if isinstance(console_data, list) and len(console_data) > 0:
+                                    console_message = console_data[0].get("message", "No message")
+                            except:
+                                console_message = str(row.get("console_logs"))[:100]
+
+                        logs.append({
+                            "timestamp": timestamp,
+                            "ping": row.get("response_time", 0) * 1000 if row.get("response_time") is not None else 0,
+                            "level": level,
+                            "message": f"Status: {status_code}, {console_message}"
+                        })
+
+                return logs
+            except Exception as e:
+                logger.error(f"Error getting logs: {str(e)}")
+                # Возвращаем хотя бы один элемент для предотвращения ошибок
+                return [{"timestamp": datetime.utcnow().isoformat(), "ping": 0, "level": "error", "message": f"Error getting logs: {str(e)}"}]
+
+        # Получаем логи с использованием определенной выше функции
+        logs = get_console_logs_normalized_for_site(site_id=site_id, limit=50)
+
+        payload = {
+            "old_logs": [{"timestamp": l["timestamp"], "response_time_ms": l.get("ping", 0)} for l in logs],
+            "logs_anomaly": [{"timestamp": l["timestamp"], "log_level": l.get("level", "info"), "message": l.get("message", "")} for l in logs],
+            "choice_role": True,
+        }
+
+        # Отправка на anomaly_report_api
+        import httpx
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post("http://localhost:8000/anomaly/run-orchestrator", json=payload, timeout=10.0)
+                resp.raise_for_status()
+                result = resp.json()
+                return {"report": result["report"]}
+            except Exception as e:
+                logger.error(f"Error calling orchestrator: {str(e)}")
+                # Возвращаем простой отчет в случае ошибки
+                return {
+                    "report": {
+                        "performance_analysis": "Автоматический анализ производительности временно недоступен.",
+                        "security_analysis": "Анализ безопасности временно недоступен.",
+                        "anomalies": "Не удалось выполнить анализ аномалий: сервис недоступен.",
+                        "recommendations": ["Убедитесь, что сервис аналитики запущен и доступен."]
+                    }
+                }
+    except Exception as e:
+        logger.error(f"Error in analyze_logs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing logs: {str(e)}")
