@@ -1,0 +1,25 @@
+# Основные библиотеки
+nest_asyncio==1.5.8
+pandas==2.3.2
+matplotlib==3.8.0
+httpx==0.27.2
+python-dotenv==1.0.0
+apscheduler==3.10.4
+
+# Telegram bot
+aiogram==3.3.0
+
+# Database / API client
+supabase==2.9.1
+
+# Selenium
+selenium==4.12.0
+
+# Chromium Driver
+chromedriver-binary==117.0.5938.92
+
+# Google Generative AI
+google-generativeai==0.8.5
+
+# Прочие утилиты
+urllib3
